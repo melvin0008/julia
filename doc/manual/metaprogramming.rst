@@ -9,16 +9,18 @@
 The strongest legacy of Lisp in the Julia language is its metaprogramming
 support. Like Lisp, Julia represents its own code as a data structure of
 the language itself.
-Because all data types and code in Julia are represented by Julia data structures,
-powerful reflection capabilities are available to explore the internals of a
-program and its types just like any other data.
 Since code is represented by objects that can be created and manipulated
 from within the language, it is possible for a program to transform and
-generate its own code. This allows sophisticated code generation without
-extra build steps, and also allows true Lisp-style macros operating at
-the level of abstract syntax. In contrast, preprocessor "macro" systems,
-like that of C and C++, perform textual manipulation and substitution
-before any actual parsing or interpretation occurs.
+generate its own code. This allows sophisticated code generation
+without extra build steps, and also allows true Lisp-style macros operating at
+the level of `abstract syntax trees <http://en.wikipedia.org/wiki/Abstract_syntax_tree>`_.
+In contrast, preprocessor "macro" systems, like that of C and C++, perform
+textual manipulation and substitution before any actual parsing or
+interpretation occurs. In addition, Because all data types and code in Julia
+are represented by Julia data structures, powerful
+`reflection <http://en.wikipedia.org/wiki/Reflection_%28computer_programming%29`_
+capabilities are available to explore the internals of a program and its types
+just like any other data. 
 
 Program representation
 ----------------------
@@ -65,7 +67,8 @@ as a data structure that is accessible from the language itself.**
 
 :obj:`Expr` objects contain three parts:
 
-- a Symbol identifying the action represented by the expression:
+- a symbol identifying the action represented by the expression (see
+  below for more discussion of Symbols):
 
 .. doctest::
 
@@ -111,11 +114,13 @@ objects:
     julia> ex3 = parse("(4 + 4) / 2")
     :((4 + 4) / 2)
 
-    julia> Base.Meta.show_sexpr(ex3)
-    (:call, :/, (:call, :+, 4, 4), 2)
+Another way to view expressions is with Meta.show_sexpr, which displays the
+`S-expression <http://en.wikipedia.org/wiki/S-expression>`_ form of a given
+:obj:Expr, which may look very familiar to users of Lisp. Here's an example
+illustrating the display on a nested :obj:Expr:
 
-(the :func:`show_sexpr` function displays the `S-expression <http://en.wikipedia.org/wiki/S-expression>`_
-form of a given :obj:`Expr`, which may look very familiar to users of Lisp)
+    julia> Meta.show_sexpr(ex3)
+    (:call, :/, (:call, :+, 4, 4), 2)
 
 Symbols
 ~~~~~~~
@@ -168,10 +173,11 @@ Expressions and evaluation
 Quoting
 ~~~~~~~
 
-There is special syntax to create expression objects without using the
-explicit :obj:`Expr` constructor above. A short form for inline expressions
-uses the ``:`` followed by a single parenthesized expression. Here is an
-example of the short form used to quote an arithmetic expression:
+The second syntactic purpose of the ``:`` character is to create expression
+objects without using the explicit :obj:`Expr` constructor. This is referred
+to as *quoting*. The ``:`` character, followed by a parenthesized Julia
+statement, generates an :obj:`Expr` object based on the enclosed code.
+Here is example of the short form used to quote an arithmetic expression:
 
 .. doctest::
 
@@ -189,10 +195,10 @@ the direct :obj:`Expr` form:
 
 .. doctest::
 
-    julia>      :(a + b*c + 1)  ==
-	   parse("a + b*c + 1") ==
-	   Expr(:call, :+, :a, Expr(:call, :*, :b, :c), 1)
-    true
+   julia>      :(a + b*c + 1)  ==
+     parse("a + b*c + 1") ==
+	 Expr(:call, :+, :a, Expr(:call, :*, :b, :c), 1)
+   true
 
 Expressions provided by the parser generally only have symbols, other
 expressions, and literal values as their args, whereas expressions
@@ -201,8 +207,12 @@ without literal forms as args. In this specific example, ``+`` and ``a``
 are symbols, ``*(b,c)`` is a subexpression, and ``1`` is a literal
 64-bit signed integer.
 
-There is a second form of quoting for multiple expressions:
-blocks of code enclosed in ``quote ... end``
+There is a second syntactic form of quoting for multiple expressions:
+blocks of code enclosed in ``quote ... end``. Note that this form
+introduces :obj:`QuoteNode` elements to the expression tree, which
+must be considered when directly manipulating an expression tree
+generated from ``quote`` blocks. For other purposes, ``:( ... )``
+and ``quote .. end`` blocks are treated identically.
 
 .. doctest::
 
@@ -225,22 +235,31 @@ Interpolation
 
 Direct construction of :obj:`Expr` objects with value arguments is
 powerful, but :obj:`Expr` constructors can be tedious compared to "normal"
-Julia syntax. Instead, Julia allows "splicing" or interpolation of expression
-objects, prefixed with ``$``, into quoted expressions. The above example
-can be written more clearly and concisely using interpolation:
+Julia syntax. As an alternative, Julia allows "splicing" or interpolation
+of literals or expressions into quoted expressions. Interpolation is
+indicated by the ``$`` prefix:
 
 .. doctest::
 
     julia> a = 1;
 
-    julia> ex = :($a + b)
+    julia> ex = :($a + b)  # interpolate the literal value of `a`
     :(1 + b)
 
-The use of ``$`` for expression interpolation is intentionally reminiscent of
-:ref:`string interpolation <man-string-interpolation>` and
-:ref:`command interpolation <man-command-interpolation>`.
-Expression interpolation allows convenient, readable programmatic construction
-of complex Julia expressions.
+    julia> ex = :(a in $:((1,2,3)) )
+    :($(Expr(:in, :a, :((1,2,3)))))
+
+Interpolating symbols into a nested expression requires enclosing each 
+symbol in an enclosing quote block:
+
+    julia> :( :a in $( :(:a + :b) ) )
+                       ^        ^
+                       quoted inner expression
+
+The use of ``$`` for expression interpolation is intentionally reminiscent
+of :ref:`string interpolation <man-string-interpolation>` and :ref:`command
+interpolation <man-command-interpolation>`. Expression interpolation allows
+convenient, readable programmatic construction of complex Julia expressions.
 
 :func:`eval` and effects
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -369,8 +388,9 @@ Macros
 
 Macros are the analogue of functions for expression generation at
 compile time. Just as a function maps a tuple of argument values to a
-return value, a macro maps a tuple of argument *expressions* to a returned
-*expression*.
+return value, a macro maps a tuple of arguments to a returned
+*expression*. Macro arguments may include expressions, literal values,
+and symbols.
 
 Why macros
 ~~~~~~~~~~
@@ -386,12 +406,12 @@ Here is an extraordinarily simple macro:
 The "return value" of this macro is the *interpolated* expression; that is,
 with the value of the variable ``name`` passed directly as an argument to
 :func:`println`. We can verify this with the **extremely
-important** function :func:`macroexpand`:
-
-.. doctest::
+important** function :func:`macroexpand`::
 
     julia> ex = macroexpand( :(@sayhello("human")) )
     :(println("Hello, ","human","!"))
+                        ^     ^
+                        now a literal string
 
     julia> typeof(ex)
     Expr
@@ -420,9 +440,9 @@ how can execute our expression without calling :func:`eval`?
 
 The answer is macros.
 
-Macros are useful because they allow the programmer to
-transform generated code into expanded expressions
-*before* the full program is compiled and executed.
+Macros are useful because they execute at when the code is parsed,
+not at the time it is run. Therefore, they allow the programmer to
+generate code *before* the full program is compiled and executed.
 
 Macro invocation
 ~~~~~~~~~~~~~~~~
@@ -677,7 +697,8 @@ operators on three arguments in terms of their 2-argument forms::
       end)
     end
 
-In this manner, Julia acts as its own preprocessor, and allows code
+In this manner, Julia acts as its own `preprocessor
+<http://en.wikipedia.org/wiki/Preprocessor>`_, and allows code
 generation from inside the language. The above code could be written
 slightly more tersely using the ``:`` prefix quoting form::
 
