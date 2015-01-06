@@ -145,9 +145,6 @@ a character or string as its argument:
     julia> :foo == symbol("foo")
     true
 
-    julia> symbol('\'')
-    :'
-
     julia> symbol("'")
     :'
 
@@ -237,14 +234,21 @@ Direct construction of :obj:`Expr` objects with value arguments is
 powerful, but :obj:`Expr` constructors can be tedious compared to "normal"
 Julia syntax. As an alternative, Julia allows "splicing" or interpolation
 of literals or expressions into quoted expressions. Interpolation is
-indicated by the ``$`` prefix:
+indicated by the ``$`` prefix.
+
+In this example, the literal value of `a` is interpolated:
 
 .. doctest::
 
     julia> a = 1;
 
-    julia> ex = :($a + b)  # interpolate the literal value of `a`
+    julia> ex = :($a + b)
     :(1 + b)
+
+In this example, the tuple ``(1,2,3)`` is interpolated as an
+expression into a conditional test:
+
+.. doctest::
 
     julia> ex = :(a in $:((1,2,3)) )
     :($(Expr(:in, :a, :((1,2,3)))))
@@ -253,7 +257,7 @@ Interpolating symbols into a nested expression requires enclosing each
 symbol in an enclosing quote block:
 
     julia> :( :a in $( :(:a + :b) ) )
-                       ^        ^
+                       ^^^^^^^^^^
                        quoted inner expression
 
 The use of ``$`` for expression interpolation is intentionally reminiscent
@@ -410,8 +414,8 @@ important** function :func:`macroexpand`::
 
     julia> ex = macroexpand( :(@sayhello("human")) )
     :(println("Hello, ","human","!"))
-                        ^     ^
-                        now a literal string
+                        ^^^^^^^
+                        interpolated: now a literal string
 
     julia> typeof(ex)
     Expr
